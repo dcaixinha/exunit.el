@@ -49,6 +49,39 @@ Each element should be a string of the form ENVVARNAME=VALUE."
   :type '(repeat (string :tag "ENVVARNAME=VALUE"))
   :group 'exunit)
 
+(defcustom exunit-test-command "mix test"
+  "Command used to run the ExUnit tests."
+  :type 'string
+  :group 'exunit)
+
+(defcustom exunit-docker-command "docker exec"
+  "Docker command to run."
+  :type 'string
+
+  :group 'exunit
+  :safe (lambda (value)
+          (member value '("docker exec" "docker run" "docker-compose run" "docker-compose exec" "docker-compose up"))))
+
+(defcustom exunit-docker-container "exunit-container-name"
+  "Name of the Docker container to run exunit in."
+  :type 'string
+  :group 'exunit)
+
+(defcustom exunit-docker-cwd "/home/app/"
+  "Working directory when running inside Docker. Use trailing slash."
+  :type 'string
+  :group 'exunit)
+
+(defcustom exunit-docker-wrapper-fn 'exunit--docker-default-wrapper
+  "Function for wrapping a command for execution inside a dockerized environment."
+  :type 'function
+  :group 'exunit)
+
+(defcustom exunit-use-docker nil
+  "When t, run specs inside Docker container using 'exunit-docker-command."
+  :type 'boolean
+  :group 'exunit)
+
 (defvar exunit-last-directory nil
   "Directory the last mix test command ran in.")
 
@@ -60,6 +93,10 @@ Each element should be a string of the form ENVVARNAME=VALUE."
 
 (defvar-local exunit-umbrella-project-root nil)
 (make-variable-buffer-local 'exunit-umbrella-project-root)
+
+(defun exunit--docker-default-wrapper (exunit-docker-command exunit-docker-container command)
+  "Function for wrapping a command for execution inside a dockerized environment."
+  (format "%s %s sh -c \"%s\"" exunit-docker-command exunit-docker-container command))
 
 (defun exunit-project-root ()
   "Return the current project root.
@@ -149,14 +186,23 @@ and filename relative to the dependency."
   (setq exunit-last-directory default-directory
         exunit-last-arguments args)
 
-  (compile args 'exunit-compilation-mode))
+  ;; (compile args 'exunit-compilation-mode))
+
+  (with-output-to-temp-buffer "*ExUnit Results*"
+    (async-shell-command args "*ExUnit Results*" "*Messages*")
+    (pop-to-buffer "*ExUnit Results*")))
 
 (defun exunit-compile (args &optional directory)
   "Run mix test with the given ARGS."
   (let ((default-directory (or directory (exunit-project-root)))
         (compilation-environment exunit-environment))
-    (exunit-do-compile
-     (s-join " " (-concat '("mix" "test") exunit-mix-test-default-options args)))))
+    (if exunit-use-docker
+        ;; (exunit-do-compile (s-join " " (-concat exunit-docker-command exunit-docker-container '("sh -c \"MIX_ENV=test mix test\""))))
+        ;; (format "%s %s sh -c \"%s\"" rspec-docker-command rspec-docker-container command))
+        (exunit-do-compile (format "%s %s sh -c \"%s\"" exunit-docker-command exunit-docker-container (s-join " " (-concat (list exunit-test-command) exunit-mix-test-default-options args))))
+      (exunit-do-compile
+       (s-join " " (-concat '("mix" "test") exunit-mix-test-default-options args))))))
+
 
 ;;; Public
 
